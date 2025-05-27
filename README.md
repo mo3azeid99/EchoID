@@ -20,7 +20,7 @@ Speaker prediction
 
 Adding individual or bulk audio files to the training dataset
 
-gui_app.py
+gui.py
 A Tkinter-based graphical user interface that allows you to:
 
 Record and save voice samples for different speakers
