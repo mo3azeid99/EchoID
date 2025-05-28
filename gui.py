@@ -6,6 +6,7 @@ from bagging import (
     record_voice, train_model, recognize_speaker, add_folder_to_database, extract_features
 )
 import joblib
+import shutil
 
 class VoiceGUI:
     def __init__(self, root):
@@ -18,7 +19,7 @@ class VoiceGUI:
         tk.Button(root, text="🎤 Record New Voice", command=self.record_new_voice).pack(pady=5)
         tk.Button(root, text="🛠 Train Model", command=self.train_model).pack(pady=5)
         tk.Button(root, text="🧪 Test Voice", command=self.test_voice).pack(pady=5)
-        tk.Button(root, text="📁 Add Folder to Database", command=self.add_folder).pack(pady=5)
+        tk.Button(root, text="➕ Add Audio File to Database", command=self.add_audio_file_to_database).pack(pady=5)
         tk.Button(root, text="❌ Exit", command=root.quit).pack(pady=20)
 
         self.result_box = tk.Text(root, height=10, width=60)
@@ -72,16 +73,36 @@ class VoiceGUI:
         except Exception as e:
             self.log(f"❌ Error: {e}")
 
-    @threaded
-    def add_folder(self):
-        folder_path = filedialog.askdirectory(title="Select Folder")
-        if folder_path:
-            self.log(f"Adding all .wav files from {folder_path}...")
-            add_folder_to_database(folder_path)
-            self.log("✅ Folder processing and training completed!")
+    def add_audio_file_to_database(self):
+        # Gather user input in main thread
+        file_path = filedialog.askopenfilename(filetypes=[("WAV files", "*.wav")])
+        if not file_path:
+            return
+        name = self.simple_input("Name", "Enter the speaker's name (e.g., ahmed):")
+        if not name:
+            return
+        index = self.simple_input("Index", "Enter recording number (e.g., 1):")
+        if not index:
+            return
+
+        # Do the heavy work in a background thread
+        def worker():
+            folder = f"voices/{name}"
+            os.makedirs(folder, exist_ok=True)
+            dest_file = f"{folder}/{name}_{index}.wav"
+            try:
+                shutil.copy(file_path, dest_file)
+                self.log(f"✅ Audio file added as: {dest_file}")
+                self.log("Training model...")
+                train_model("voices")
+                self.log("✅ Model trained after adding new file!")
+            except Exception as e:
+                self.log(f"❌ Error adding file: {e}")
+
+        threading.Thread(target=worker).start()
 
     def simple_input(self, title, prompt):
-        return simpledialog.askstring(title, prompt)
+        return simpledialog.askstring(title, prompt, parent=self.root)
 
 if __name__ == "__main__":
     root = tk.Tk()
