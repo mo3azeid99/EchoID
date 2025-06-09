@@ -16,7 +16,7 @@ class VoiceGUI:
 
         tk.Label(root, text="Voice Recognition System", font=("Arial", 16)).pack(pady=10)
 
-        tk.Button(root, text="🎤 Record New Voice", command=self.record_new_voice).pack(pady=5)
+        tk.Button(root, text="🎤 Record New Voice", command=self.get_record_inputs).pack(pady=5)
         tk.Button(root, text="🛠 Train Model", command=self.train_model).pack(pady=5)
         tk.Button(root, text="🧪 Test Voice", command=self.test_voice).pack(pady=5)
         tk.Button(root, text="➕ Add Audio File to Database", command=self.add_audio_file_to_database).pack(pady=5)
@@ -34,14 +34,18 @@ class VoiceGUI:
             threading.Thread(target=func, args=(self, *args), kwargs=kwargs).start()
         return wrapper
 
-    @threaded
-    def record_new_voice(self):
+    def get_record_inputs(self):
         name = self.simple_input("Name", "Enter the speaker's name (e.g., ahmed):")
         if not name:
             return
         index = self.simple_input("Index", "Enter recording number (e.g., 1):")
         if not index:
             return
+        # Call threaded recording after inputs gathered
+        self.start_recording_thread(name, index)
+
+    @threaded
+    def start_recording_thread(self, name, index):
         folder = f"voices/{name}"
         os.makedirs(folder, exist_ok=True)
         filename = f"{folder}/{name}_{index}.wav"
@@ -74,7 +78,6 @@ class VoiceGUI:
             self.log(f"❌ Error: {e}")
 
     def add_audio_file_to_database(self):
-        # Gather user input in main thread
         file_path = filedialog.askopenfilename(filetypes=[("WAV files", "*.wav")])
         if not file_path:
             return
@@ -85,7 +88,6 @@ class VoiceGUI:
         if not index:
             return
 
-        # Do the heavy work in a background thread
         def worker():
             folder = f"voices/{name}"
             os.makedirs(folder, exist_ok=True)
@@ -108,3 +110,4 @@ if __name__ == "__main__":
     root = tk.Tk()
     app = VoiceGUI(root)
     root.mainloop()
+
