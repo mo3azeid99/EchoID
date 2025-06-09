@@ -3,161 +3,156 @@ import soundfile as sf
 import librosa
 import numpy as np
 import os
+import joblib
+import noisereduce as nr
+import subprocess
 from sklearn.ensemble import RandomForestClassifier, VotingClassifier
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
-import joblib
-import noisereduce as nr
 
-# Ensure voices directory exists
-if not os.path.exists("voices"):
-    os.makedirs("voices")
+os.makedirs("voices", exist_ok=True)
 
-# Record voice
 def record_voice(filename="voice_sample.wav", duration=5, fs=44100):
-    print("🎙 Recording for", duration, "seconds...")
-    recording = sd.rec(int(duration * fs), samplerate=fs, channels=1)
-    sd.wait()
-    sf.write(filename, recording, fs)
-    print(f"✅ Audio saved in: {filename}")
+    print("🎙 Recording voice for", duration, "seconds...")
+    try:
+        recording = sd.rec(int(duration * fs), samplerate=fs, channels=1)
+        sd.wait()
+        sf.write(filename, recording, fs)
+        print(f"✅ Saved audio file: {filename}")
+    except Exception as e:
+        print(f"❌ Error during recording: {e}")
 
-# Extract features with silence check and error handling
 def extract_features(filename):
     try:
         y, sr = librosa.load(filename, sr=None)
+        y_denoised = nr.reduce_noise(y=y, sr=sr)
+        y_trimmed, _ = librosa.effects.trim(y_denoised, top_db=20)
+
+        if len(y_trimmed) < sr * 0.5:
+            raise ValueError("⚠️ Audio too short or silent. Please record again.")
+
+        mfcc = librosa.feature.mfcc(y=y_trimmed, sr=sr, n_mfcc=40)
+        return np.mean(mfcc.T, axis=0)
+
     except Exception as e:
-        raise ValueError(f"Error loading {filename}: {e}")
+        raise ValueError(f"❌ Error processing audio: {e}")
 
-    # Noise reduction
-    y_denoised = nr.reduce_noise(y=y, sr=sr)
+def fix_audio_file(src_path):
+    print(f"⚙️ Attempting to fix audio file: {src_path}")
+    fixed_path = src_path.replace(".wav", "_fixed.wav")
+    try:
+        subprocess.run(["ffmpeg", "-y", "-i", src_path, "-ar", "44100", "-ac", "1", fixed_path],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if os.path.exists(fixed_path):
+            print(f"✅ Fixed audio saved as: {fixed_path}")
+            return fixed_path
+        else:
+            print("❌ Fixing failed: ffmpeg could not convert the file.")
+            return None
+    except Exception as e:
+        print(f"❌ Error running ffmpeg: {e}")
+        return None
 
-    # Remove silence
-    y_trimmed, _ = librosa.effects.trim(y_denoised, top_db=20)
-
-    # Check if it's all silence
-    if len(y_trimmed) < sr * 0.5:
-        raise ValueError("⚠️ Audio is too short or silent, please record again.")
-
-    # Extract MFCC
-    mfcc = librosa.feature.mfcc(y=y_trimmed, sr=sr, n_mfcc=40)
-    return np.mean(mfcc.T, axis=0)
-
-# Train model using Bagging (RandomForest + KNN)
 def train_model(voice_samples_dir="voices"):
     X, y = [], []
-
-    print("\n🛠 Training the model with Bagging (Random Forest + KNN)...")
+    print("\n🛠 Training the model...")
 
     for root, _, files in os.walk(voice_samples_dir):
         for file in files:
             if file.endswith(".wav"):
                 label = os.path.basename(root).lower()
-                path = os.path.join(root, file)
+                filepath = os.path.join(root, file)
                 try:
-                    features = extract_features(path)
+                    features = extract_features(filepath)
                     X.append(features)
                     y.append(label)
                 except ValueError as e:
                     print(f"⚠️ Skipping file {file}: {e}")
 
     if not X:
-        print("❌ No valid recordings available for training.")
+        print("❌ No valid recordings to train the model.")
         return
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
     rf = RandomForestClassifier(n_estimators=100, random_state=42)
     knn = KNeighborsClassifier(n_neighbors=3)
-
-    model = VotingClassifier(estimators=[
-        ('rf', rf),
-        ('knn', knn)
-    ], voting='hard')
-
+    model = VotingClassifier(estimators=[('rf', rf), ('knn', knn)], voting='hard')
     model.fit(X_train, y_train)
+
     y_pred = model.predict(X_test)
     acc = accuracy_score(y_test, y_pred)
-    print(f"✅ Test Set Accuracy: {acc * 100:.2f}%")
+    print(f"✅ Model accuracy: {acc * 100:.2f}%")
 
     joblib.dump(model, "voice_model.pkl")
-    print("✅ Model trained and saved successfully!")
+    print("✅ Model saved successfully!")
 
-# Recognize speaker
 def recognize_speaker(filename="test.wav"):
     if not os.path.exists("voice_model.pkl"):
-        print("❌ You need to train the model first.")
+        print("❌ Model not trained yet.")
         return
-
-    model = joblib.load("voice_model.pkl")
     try:
+        model = joblib.load("voice_model.pkl")
         features = extract_features(filename)
         prediction = model.predict([features])[0]
         print(f"🎤 This voice belongs to: {prediction}")
     except ValueError as e:
-        print(f"❌ Error in audio: {e}")
+        print(f"❌ Speaker recognition error: {e}")
 
-# ✅ Add all audio files from a folder to the database
 def add_folder_to_database(folder_path):
     if not os.path.exists(folder_path):
-        print("❌ Folder not found.")
+        print("❌ Folder path does not exist.")
         return
 
-    # Retrieve all files with .wav extension
-    files = [f for f in os.listdir(folder_path) if f.endswith(".wav")]
-    if not files:
+    wav_files = [f for f in os.listdir(folder_path) if f.endswith(".wav")]
+    if not wav_files:
         print("❌ No .wav files found in the folder.")
         return
 
-    # Loop through all the .wav files
-    for file in files:
+    for file in wav_files:
+        name = file.split("_")[0].lower()
+        index = file.split("_")[1].split(".")[0]
+        src = os.path.join(folder_path, file)
+        dest_folder = f"voices/{name}"
+        os.makedirs(dest_folder, exist_ok=True)
+        dest_file = f"{dest_folder}/{name}_{index}.wav"
+
         try:
-            # Get name and index from file name
-            name = file.split("_")[0].lower()
-            index = file.split("_")[1].split(".")[0]
-            
-            # Define source and destination paths
-            src = os.path.join(folder_path, file)
-            dest_folder = f"voices/{name}"
-
-            # Create folder if it does not exist
-            if not os.path.exists(dest_folder):
-                os.makedirs(dest_folder)
-
-            dest_file = f"{dest_folder}/{name}_{index}.wav"
-            
-            # Load and save file to the database folder
             y, sr = librosa.load(src, sr=44100)
             sf.write(dest_file, y, sr)
             print(f"✅ Added: {dest_file}")
-        except Exception as e:
-            print(f"❌ Error processing file {file}: {e}")
+        except Exception:
+            fixed = fix_audio_file(src)
+            if fixed:
+                try:
+                    y, sr = librosa.load(fixed, sr=44100)
+                    sf.write(dest_file, y, sr)
+                    print(f"✅ Added after fixing: {dest_file}")
+                except Exception as e2:
+                    print(f"❌ Could not process even after fixing: {e2}")
+            else:
+                print(f"❌ Skipping corrupted file: {file}")
 
-    # After adding all files, train the model
-    train_model("voices")
-
-# Main program
 def main():
-    print("\n🎧 Voice Recognition System")
+    print("\n🎧 Speaker Recognition System")
     print("1. Record new voice")
-    print("2. Train the model")
+    print("2. Train model")
     print("3. Test voice")
     print("4. Exit")
-    print("5. Add existing audio file to database")
-    print("6. Add entire folder to database")
+    print("5. Add existing audio file")
+    print("6. Add folder with recordings")
 
     while True:
-        choice = input("\nChoose an option (1/2/3/4/5/6): ").strip()
+        choice = input("\nEnter your choice (1-6): ").strip()
 
         if choice == "1":
-            name = input("Enter the person's name (e.g., ahmed): ").strip().lower()
-            index = input("Enter the recording number (e.g., 1): ").strip()
+            name = input("Enter person name (e.g., ahmed): ").strip().lower()
+            index = input("Enter recording number (e.g., 1): ").strip()
             folder = f"voices/{name}"
-            if not os.path.exists(folder):
-                os.makedirs(folder)
+            os.makedirs(folder, exist_ok=True)
             filename = f"{folder}/{name}_{index}.wav"
             record_voice(filename)
-            train_model("voices")
 
         elif choice == "2":
             train_model("voices")
@@ -171,27 +166,35 @@ def main():
             break
 
         elif choice == "5":
-            file_path = input("Enter the path to the audio file: ").strip()
-            name = input("Enter the person's name (e.g., ahmed): ").strip().lower()
-            index = input("Enter the recording number (e.g., 1): ").strip()
+            file_path = input("Enter full path to audio file: ").strip()
+            name = input("Enter person name: ").strip().lower()
+            index = input("Enter recording number: ").strip()
             folder = f"voices/{name}"
-            if not os.path.exists(folder):
-                os.makedirs(folder)
+            os.makedirs(folder, exist_ok=True)
             new_file = f"{folder}/{name}_{index}.wav"
             try:
                 y, sr = librosa.load(file_path, sr=44100)
                 sf.write(new_file, y, sr)
-                print(f"✅ Audio added as: {new_file}")
-                train_model("voices")
-            except Exception as e:
-                print("❌ Error processing file:", e)
+                print(f"✅ File added: {new_file}")
+            except Exception:
+                fixed = fix_audio_file(file_path)
+                if fixed:
+                    try:
+                        y, sr = librosa.load(fixed, sr=44100)
+                        sf.write(new_file, y, sr)
+                        print(f"✅ File added after fixing: {new_file}")
+                    except Exception as e2:
+                        print("❌ Error even after fixing:", e2)
+                else:
+                    print("❌ Could not fix or add the file.")
 
         elif choice == "6":
-            folder_path = input("📁 Enter folder path containing voice files: ").strip()
+            folder_path = input("Enter path to folder with .wav files: ").strip()
             add_folder_to_database(folder_path)
 
         else:
-            print("⚠️ Invalid choice, try again.")
+            print("⚠️ Invalid choice. Please try again.")
 
 if __name__ == "__main__":
     main()
+
