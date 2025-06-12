@@ -96,7 +96,7 @@ Background noise will reduce accuracy—record in a quiet environment when possi
 # Accuracy & Performance
 On a sample dataset with clean recordings, the model achieved:
 
-Accuracy: ~89%
+Accuracy: ~92%
 
 Inference Time: ~0.12s per sample
 
