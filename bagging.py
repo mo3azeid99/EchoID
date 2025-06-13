@@ -101,7 +101,7 @@ def train_model(voice_samples_dir="voices"):
         pickle.dump(speaker_features, f)
     print("✅ Speaker features saved.")
 
-    return acc  # ✅ أهي دي الإضافة المهمة
+    return acc  
 
 def recognize_speaker(filename="test.wav", threshold=0.7):
     if not os.path.exists("voice_model.pkl"):
@@ -139,40 +139,6 @@ def recognize_speaker(filename="test.wav", threshold=0.7):
 
     except ValueError as e:
         print(f"❌ Speaker recognition error: {e}")
-
-def add_folder_to_database(folder_path):
-    if not os.path.exists(folder_path):
-        print("❌ Folder path does not exist.")
-        return
-
-    wav_files = [f for f in os.listdir(folder_path) if f.endswith(".wav")]
-    if not wav_files:
-        print("❌ No .wav files found in the folder.")
-        return
-
-    for file in wav_files:
-        name = file.split("_")[0].lower()
-        index = file.split("_")[1].split(".")[0]
-        src = os.path.join(folder_path, file)
-        dest_folder = f"voices/{name}"
-        os.makedirs(dest_folder, exist_ok=True)
-        dest_file = f"{dest_folder}/{name}_{index}.wav"
-
-        try:
-            y, sr = librosa.load(src, sr=44100)
-            sf.write(dest_file, y, sr)
-            print(f"✅ Added: {dest_file}")
-        except Exception:
-            fixed = fix_audio_file(src)
-            if fixed:
-                try:
-                    y, sr = librosa.load(fixed, sr=44100)
-                    sf.write(dest_file, y, sr)
-                    print(f"✅ Added after fixing: {dest_file}")
-                except Exception as e2:
-                    print(f"❌ Could not process even after fixing: {e2}")
-            else:
-                print(f"❌ Skipping corrupted file: {file}")
 
 def main():
     print("\n\U0001F3A7 Speaker Recognition System")
@@ -230,9 +196,6 @@ def main():
                 else:
                     print("❌ Could not fix or add the file.")
 
-        elif choice == "6":
-            folder_path = input("Enter path to folder with .wav files: ").strip()
-            add_folder_to_database(folder_path)
 
         else:
             print("⚠️ Invalid choice. Please try again.")
