@@ -3,7 +3,7 @@ from tkinter import filedialog, messagebox, simpledialog
 import threading
 import os
 from bagging import (
-    record_voice, train_model, recognize_speaker, add_folder_to_database, extract_features
+    record_voice, train_model, recognize_speaker,  extract_features
 )
 import joblib
 import shutil
