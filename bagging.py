@@ -74,7 +74,7 @@ def train_model(voice_samples_dir="voices"):
 
     if not X:
         print("❌ No valid recordings to train the model.")
-        return
+        return None
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
@@ -100,6 +100,8 @@ def train_model(voice_samples_dir="voices"):
     with open("features.pkl", "wb") as f:
         pickle.dump(speaker_features, f)
     print("✅ Speaker features saved.")
+
+    return acc  # ✅ أهي دي الإضافة المهمة
 
 def recognize_speaker(filename="test.wav", threshold=0.7):
     if not os.path.exists("voice_model.pkl"):
@@ -193,7 +195,9 @@ def main():
             record_voice(filename)
 
         elif choice == "2":
-            train_model("voices")
+            acc = train_model("voices")
+            if acc is not None:
+                print(f"🎯 Accuracy = {acc*100:.2f}%")
 
         elif choice == "3":
             record_voice("test.wav")
