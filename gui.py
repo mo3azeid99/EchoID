@@ -7,6 +7,8 @@ from bagging import (
 )
 import joblib
 import shutil
+from sklearn.metrics import accuracy_score
+from sklearn.model_selection import train_test_split
 
 class VoiceGUI:
     def __init__(self, root):
@@ -41,7 +43,6 @@ class VoiceGUI:
         index = self.simple_input("Index", "Enter recording number (e.g., 1):")
         if not index:
             return
-        # Call threaded recording after inputs gathered
         self.start_recording_thread(name, index)
 
     @threaded
@@ -52,14 +53,20 @@ class VoiceGUI:
         self.log(f"Recording voice for {name}...")
         record_voice(filename)
         self.log("Training model...")
-        train_model("voices")
-        self.log("✅ Recording and training completed!")
+        acc = train_model("voices")
+        if acc:
+            self.log(f"✅ Recording and training completed! Accuracy: {acc*100:.2f}%")
+        else:
+            self.log("✅ Recording and training completed!")
 
     @threaded
     def train_model(self):
         self.log("Training model with available data...")
-        train_model("voices")
-        self.log("✅ Training completed!")
+        acc = train_model("voices")
+        if acc:
+            self.log(f"✅ Training completed! Accuracy: {acc*100:.2f}%")
+        else:
+            self.log("✅ Training completed!")
 
     @threaded
     def test_voice(self):
@@ -96,8 +103,11 @@ class VoiceGUI:
                 shutil.copy(file_path, dest_file)
                 self.log(f"✅ Audio file added as: {dest_file}")
                 self.log("Training model...")
-                train_model("voices")
-                self.log("✅ Model trained after adding new file!")
+                acc = train_model("voices")
+                if acc:
+                    self.log(f"✅ Model trained after adding new file! Accuracy: {acc*100:.2f}%")
+                else:
+                    self.log("✅ Model trained after adding new file!")
             except Exception as e:
                 self.log(f"❌ Error adding file: {e}")
 
