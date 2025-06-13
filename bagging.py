@@ -6,15 +6,17 @@ import os
 import joblib
 import noisereduce as nr
 import subprocess
+import pickle
 from sklearn.ensemble import RandomForestClassifier, VotingClassifier
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
+from sklearn.metrics.pairwise import cosine_similarity
 
 os.makedirs("voices", exist_ok=True)
 
 def record_voice(filename="voice_sample.wav", duration=5, fs=44100):
-    print("🎙 Recording voice for", duration, "seconds...")
+    print("\U0001F3A7 Recording voice for", duration, "seconds...")
     try:
         recording = sd.rec(int(duration * fs), samplerate=fs, channels=1)
         sd.wait()
@@ -56,7 +58,7 @@ def fix_audio_file(src_path):
 
 def train_model(voice_samples_dir="voices"):
     X, y = [], []
-    print("\n🛠 Training the model...")
+    print("\n\U0001F6E0 Training the model...")
 
     for root, _, files in os.walk(voice_samples_dir):
         for file in files:
@@ -88,15 +90,51 @@ def train_model(voice_samples_dir="voices"):
     joblib.dump(model, "voice_model.pkl")
     print("✅ Model saved successfully!")
 
-def recognize_speaker(filename="test.wav"):
+    speaker_features = {}
+    for i in range(len(y)):
+        label = y[i]
+        if label not in speaker_features:
+            speaker_features[label] = []
+        speaker_features[label].append(X[i])
+
+    with open("features.pkl", "wb") as f:
+        pickle.dump(speaker_features, f)
+    print("✅ Speaker features saved.")
+
+def recognize_speaker(filename="test.wav", threshold=0.7):
     if not os.path.exists("voice_model.pkl"):
         print("❌ Model not trained yet.")
         return
+
+    if not os.path.exists("features.pkl"):
+        print("❌ Speaker features not found. Please train the model again.")
+        return
+
     try:
         model = joblib.load("voice_model.pkl")
-        features = extract_features(filename)
-        prediction = model.predict([features])[0]
-        print(f"🎤 This voice belongs to: {prediction}")
+        with open("features.pkl", "rb") as f:
+            speaker_features = pickle.load(f)
+
+        features = extract_features(filename).reshape(1, -1)
+
+        probabilities = {}
+        for label, samples in speaker_features.items():
+            similarities = cosine_similarity([features[0]], samples)
+            avg_sim = np.mean(similarities)
+            probabilities[label] = avg_sim
+
+        if not probabilities:
+            print("❌ No speakers in the database.")
+            return
+
+        best_match = max(probabilities, key=probabilities.get)
+        best_score = probabilities[best_match]
+
+        if best_score >= threshold:
+            print(f"\U0001F3A4 This voice belongs to: {best_match} (confidence: {best_score:.2f})")
+        else:
+            print(f"\U0001F50D Unrecognized speaker (best match: {best_match}, score: {best_score:.2f})")
+
     except ValueError as e:
         print(f"❌ Speaker recognition error: {e}")
 
@@ -135,7 +173,7 @@ def add_folder_to_database(folder_path):
                 print(f"❌ Skipping corrupted file: {file}")
 
 def main():
-    print("\n🎧 Speaker Recognition System")
+    print("\n\U0001F3A7 Speaker Recognition System")
     print("1. Record new voice")
     print("2. Train model")
     print("3. Test voice")
@@ -162,7 +200,7 @@ def main():
             recognize_speaker("test.wav")
 
         elif choice == "4":
-            print("👋 Goodbye!")
+            print("\U0001F44B Goodbye!")
             break
 
         elif choice == "5":
@@ -197,4 +235,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
